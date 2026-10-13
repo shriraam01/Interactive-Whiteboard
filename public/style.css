@@ -16,3 +16,4 @@ canvas { display: block; background: #fff; cursor: crosshair; }
 
 #toolbar button { padding: 4px 10px; cursor: pointer; }
 #toolbar button.active { background: #333; color: #fff; }
+#room { font-weight: bold; padding-right: 8px; border-right: 1px solid #ccc; }
