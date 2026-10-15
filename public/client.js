@@ -8,9 +8,7 @@ const undoBtn = document.getElementById("undo");
 const redoBtn = document.getElementById("redo");
 const clearBtn = document.getElementById("clear");
 const saveBtn = document.getElementById("save");
-
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+const usersLabel = document.getElementById("users");
 
 const room = new URLSearchParams(location.search).get("room") || "main";
 document.getElementById("room").textContent = "Room: " + room;
@@ -22,6 +20,7 @@ let drawing = false;
 let erasing = false;
 let last = null;
 let strokeId = null;
+let localHistory = []; // local copy so the board can be redrawn after a resize
 
 function drawLine({ x0, y0, x1, y1, color, size }) {
   ctx.strokeStyle = color;
@@ -34,19 +33,31 @@ function drawLine({ x0, y0, x1, y1, color, size }) {
 }
 
 function redraw(history) {
+  localHistory = history;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   history.forEach(drawLine);
 }
 
-canvas.addEventListener("mousedown", (e) => {
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  redraw(localHistory);
+}
+
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+// pointer events work for mouse, touch and pen
+canvas.addEventListener("pointerdown", (e) => {
   drawing = true;
   last = [e.clientX, e.clientY];
   strokeId = Date.now() + "-" + Math.random().toString(36).slice(2, 8);
 });
-canvas.addEventListener("mouseup", () => (drawing = false));
-canvas.addEventListener("mouseleave", () => (drawing = false));
+canvas.addEventListener("pointerup", () => (drawing = false));
+canvas.addEventListener("pointercancel", () => (drawing = false));
+canvas.addEventListener("pointerleave", () => (drawing = false));
 
-canvas.addEventListener("mousemove", (e) => {
+canvas.addEventListener("pointermove", (e) => {
   if (!drawing) return;
   const data = {
     x0: last[0],
@@ -58,6 +69,7 @@ canvas.addEventListener("mousemove", (e) => {
     strokeId: strokeId,
   };
   drawLine(data);
+  localHistory.push(data);
   socket.emit("draw", data);
   last = [e.clientX, e.clientY];
 });
@@ -93,7 +105,16 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "y") socket.emit("redo");
 });
 
-socket.on("draw", drawLine);
+socket.on("draw", (data) => {
+  localHistory.push(data);
+  drawLine(data);
+});
 socket.on("init", redraw);
 socket.on("redraw", redraw);
-socket.on("clear", () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+socket.on("clear", () => {
+  localHistory = [];
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+});
+socket.on("users", (count) => {
+  usersLabel.textContent = "Users: " + count;
+});
