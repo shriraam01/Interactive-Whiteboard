@@ -15,6 +15,11 @@ function getRoom(name) {
   return rooms[name];
 }
 
+function sendUserCount(name) {
+  const size = io.sockets.adapter.rooms.get(name)?.size || 0;
+  io.to(name).emit("users", size);
+}
+
 io.on("connection", (socket) => {
   let roomName = null;
 
@@ -22,6 +27,7 @@ io.on("connection", (socket) => {
     roomName = name;
     socket.join(name);
     socket.emit("init", getRoom(name).history);
+    sendUserCount(name);
   });
 
   socket.on("draw", (data) => {
@@ -67,6 +73,12 @@ io.on("connection", (socket) => {
     room.history = [];
     room.redo = {};
     io.to(roomName).emit("clear");
+  });
+
+  socket.on("disconnect", () => {
+    if (!roomName) return;
+    delete getRoom(roomName).redo[socket.id];
+    sendUserCount(roomName);
   });
 });
 
