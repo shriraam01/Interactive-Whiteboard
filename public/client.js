@@ -10,6 +10,10 @@ const clearBtn = document.getElementById("clear");
 const saveBtn = document.getElementById("save");
 const usersLabel = document.getElementById("users");
 
+// fixed logical board size, scaled by CSS to fit any screen
+canvas.width = 1280;
+canvas.height = 720;
+
 const room = new URLSearchParams(location.search).get("room") || "main";
 document.getElementById("room").textContent = "Room: " + room;
 
@@ -20,7 +24,16 @@ let drawing = false;
 let erasing = false;
 let last = null;
 let strokeId = null;
-let localHistory = []; // local copy so the board can be redrawn after a resize
+let buffer = []; // segments waiting to be sent
+
+// convert screen position to board position
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return [
+    (e.clientX - rect.left) * (canvas.width / rect.width),
+    (e.clientY - rect.top) * (canvas.height / rect.height),
+  ];
+}
 
 function drawLine({ x0, y0, x1, y1, color, size }) {
   ctx.strokeStyle = color;
@@ -33,45 +46,54 @@ function drawLine({ x0, y0, x1, y1, color, size }) {
 }
 
 function redraw(history) {
-  localHistory = history;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   history.forEach(drawLine);
 }
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  redraw(localHistory);
+// send buffered segments as one batch
+function flush() {
+  if (buffer.length === 0) return;
+  socket.emit("draw", buffer);
+  buffer = [];
+}
+setInterval(flush, 30);
+
+// flush pending strokes first so events reach the server in order
+function send(event) {
+  flush();
+  socket.emit(event);
 }
 
-resizeCanvas();
-window.addEventListener("resize", resizeCanvas);
+function stopDrawing() {
+  flush();
+  drawing = false;
+}
 
 // pointer events work for mouse, touch and pen
 canvas.addEventListener("pointerdown", (e) => {
   drawing = true;
-  last = [e.clientX, e.clientY];
+  last = getPos(e);
   strokeId = Date.now() + "-" + Math.random().toString(36).slice(2, 8);
 });
-canvas.addEventListener("pointerup", () => (drawing = false));
-canvas.addEventListener("pointercancel", () => (drawing = false));
-canvas.addEventListener("pointerleave", () => (drawing = false));
+canvas.addEventListener("pointerup", stopDrawing);
+canvas.addEventListener("pointercancel", stopDrawing);
+canvas.addEventListener("pointerleave", stopDrawing);
 
 canvas.addEventListener("pointermove", (e) => {
   if (!drawing) return;
+  const pos = getPos(e);
   const data = {
     x0: last[0],
     y0: last[1],
-    x1: e.clientX,
-    y1: e.clientY,
+    x1: pos[0],
+    y1: pos[1],
     color: erasing ? "#ffffff" : colorInput.value,
     size: erasing ? 20 : sizeInput.value,
     strokeId: strokeId,
   };
   drawLine(data);
-  localHistory.push(data);
-  socket.emit("draw", data);
-  last = [e.clientX, e.clientY];
+  buffer.push(data);
+  last = pos;
 });
 
 eraserBtn.addEventListener("click", () => {
@@ -79,9 +101,9 @@ eraserBtn.addEventListener("click", () => {
   eraserBtn.classList.toggle("active", erasing);
 });
 
-undoBtn.addEventListener("click", () => socket.emit("undo"));
-redoBtn.addEventListener("click", () => socket.emit("redo"));
-clearBtn.addEventListener("click", () => socket.emit("clear"));
+undoBtn.addEventListener("click", () => send("undo"));
+redoBtn.addEventListener("click", () => send("redo"));
+clearBtn.addEventListener("click", () => send("clear"));
 
 saveBtn.addEventListener("click", () => {
   // draw on a white background so the saved image is not transparent
@@ -101,20 +123,14 @@ saveBtn.addEventListener("click", () => {
 
 document.addEventListener("keydown", (e) => {
   if (!e.ctrlKey) return;
-  if (e.key === "z") socket.emit("undo");
-  if (e.key === "y") socket.emit("redo");
+  if (e.key === "z") send("undo");
+  if (e.key === "y") send("redo");
 });
 
-socket.on("draw", (data) => {
-  localHistory.push(data);
-  drawLine(data);
-});
+socket.on("draw", (segments) => segments.forEach(drawLine));
 socket.on("init", redraw);
 socket.on("redraw", redraw);
-socket.on("clear", () => {
-  localHistory = [];
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-});
+socket.on("clear", () => ctx.clearRect(0, 0, canvas.width, canvas.height));
 socket.on("users", (count) => {
   usersLabel.textContent = "Users: " + count;
 });
