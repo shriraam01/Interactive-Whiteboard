@@ -30,13 +30,16 @@ io.on("connection", (socket) => {
     sendUserCount(name);
   });
 
-  socket.on("draw", (data) => {
-    if (!roomName) return;
+  // receives a batch (array) of stroke segments
+  socket.on("draw", (segments) => {
+    if (!roomName || !Array.isArray(segments)) return;
     const room = getRoom(roomName);
-    data.owner = socket.id;
-    room.history.push(data);
+    segments.forEach((segment) => {
+      segment.owner = socket.id;
+      room.history.push(segment);
+    });
     room.redo[socket.id] = [];
-    socket.to(roomName).emit("draw", data);
+    socket.to(roomName).emit("draw", segments);
   });
 
   socket.on("undo", () => {
