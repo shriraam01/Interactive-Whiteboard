@@ -1,6 +1,6 @@
 # Interactive Whiteboard
 
-A real-time collaborative whiteboard built for the Computer Networks course. Multiple users can draw on a shared canvas from different devices, and every stroke appears instantly for everyone in the same room.
+A real-time collaborative whiteboard where multiple users can draw on a shared canvas from different devices, and every stroke appears instantly for everyone in the same room.
 
 ## Technologies
 
